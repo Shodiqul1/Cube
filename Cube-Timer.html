@@ -1,0 +1,211 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>Rubik Timer</title>
+<style>
+html, body {
+    margin:0; padding:0; height:100%; width:100%;
+    overflow:hidden; /* disable scroll */
+    background:#111; color:white; font-family:Arial,sans-serif;
+}
+#touch-area {
+    width:100%; height:100%;
+    display:flex; justify-content:center; align-items:center;
+    flex-direction:column;
+    box-sizing:border-box;
+}
+.container {
+    width:100%; max-width:700px; padding:20px; text-align:center; box-sizing:border-box;
+}
+h1 { margin-bottom:10px; font-size:1.8rem; }
+#scramble { font-size:1.2rem; margin:15px 0; word-break:break-word; }
+#timer { font-size:4rem; margin:15px 0; }
+button { padding:10px 16px; font-size:1rem; border:none; border-radius:6px; cursor:pointer; }
+#scrambleBtn { background:#0088ff; color:white; }
+.hint { margin-top:10px; font-size:0.85rem; opacity:0.7; }
+
+/* TOP TIME Kotak scrollable */
+.top-times { margin-top:20px; text-align:center; }
+.top-times h2 { margin-bottom:8px; font-size:1.2rem; }
+#timeList {
+    max-height:250px; /* hanya kotak yang scrollable */
+    overflow-y:auto;
+    display:flex;
+    flex-direction:column;
+    gap:8px;
+    padding:0 5px;
+    text-align:left;
+}
+.time-item {
+    display:flex;
+    justify-content:space-between;
+    align-items:center;
+    background:#222;
+    padding:12px;
+    border-radius:8px;
+    border:1px solid #444;
+    font-size:1rem;
+}
+.delete-btn { background:#ff4444; color:white; font-size:0.8rem; padding:4px 8px; border-radius:5px; }
+</style>
+</head>
+<body>
+
+<div id="touch-area">
+    <div class="container">
+
+        <h1>Rubik Timer</h1>
+
+        <div id="scramble">Tap SCRAMBLE</div>
+        <button id="scrambleBtn">SCRAMBLE</button>
+
+        <div id="timer">00:00.00</div>
+        <div class="hint">Hold layar → 0 → lepaskan → start. Tap sekali untuk stop otomatis masuk Top Waktu.</div>
+
+        <div class="top-times">
+            <h2>🏆 Top Waktu</h2>
+            <div id="timeList"></div>
+        </div>
+
+    </div>
+</div>
+
+<script>
+let running = false;
+let startTime = 0;
+let interval = null;
+let holdTimeout = null;
+let held = false;
+
+// Ambil topTimes dari localStorage
+let times = JSON.parse(localStorage.getItem("topTimes")) || [];
+
+const timerEl = document.getElementById("timer");
+const touchArea = document.getElementById("touch-area");
+const scrambleEl = document.getElementById("scramble");
+const scrambleBtn = document.getElementById("scrambleBtn");
+const timeList = document.getElementById("timeList");
+
+function formatTime(ms) {
+    let total = Math.floor(ms / 10);
+    let cs = total % 100;
+    let s = Math.floor(total / 100) % 60;
+    let m = Math.floor(total / 6000);
+    return `${String(m).padStart(2,"0")}:${String(s).padStart(2,"0")}.${String(cs).padStart(2,"0")}`;
+}
+
+// Start timer
+function startTimer() {
+    startTime = Date.now();
+    interval = setInterval(() => {
+        timerEl.textContent = formatTime(Date.now() - startTime);
+    }, 10);
+    running = true;
+}
+
+// Stop timer & simpan ke Top Waktu
+function stopTimer() {
+    if (!running) return;
+    clearInterval(interval);
+    running = false;
+    saveTopTime(Date.now() - startTime);
+}
+
+// Hold-to-start + tap-to-stop
+touchArea.addEventListener("mousedown", e => {
+    if (e.target.tagName === "BUTTON") return;
+    held = false;
+    if (!running) {
+        holdTimeout = setTimeout(() => {
+            timerEl.textContent = "00:00.00";
+            held = true;
+        }, 500);
+    }
+});
+
+touchArea.addEventListener("mouseup", e => {
+    clearTimeout(holdTimeout);
+    if (!running && held) startTimer();
+    else if (running) stopTimer();
+});
+
+touchArea.addEventListener("touchstart", e => {
+    if (e.target.tagName === "BUTTON") return;
+    held = false;
+    if (!running) {
+        holdTimeout = setTimeout(() => {
+            timerEl.textContent = "00:00.00";
+            held = true;
+        }, 500);
+    }
+});
+
+touchArea.addEventListener("touchend", e => {
+    clearTimeout(holdTimeout);
+    if (!running && held) startTimer();
+    else if (running) stopTimer();
+});
+
+// Spacebar toggle start/stop
+document.addEventListener("keydown", e => {
+    if (e.code === "Space") {
+        e.preventDefault();
+        if (!running) startTimer();
+        else stopTimer();
+    }
+});
+
+// Simpan hanya top tercepat
+function saveTopTime(ms) {
+    times.push(ms);
+    times.sort((a,b)=>a-b);
+    times = times.slice(0,10); // max 10 tercepat
+    localStorage.setItem("topTimes", JSON.stringify(times));
+    renderTimes();
+}
+
+// Render Top Waktu
+function renderTimes() {
+    timeList.innerHTML = "";
+    times.forEach((t,i)=>{
+        const div = document.createElement("div");
+        div.className = "time-item";
+        div.innerHTML = `<span>${i+1}. ${formatTime(t)}</span>
+                         <button class="delete-btn">Hapus</button>`;
+        div.querySelector("button").onclick=()=>{
+            times.splice(i,1);
+            localStorage.setItem("topTimes", JSON.stringify(times));
+            renderTimes();
+        };
+        timeList.appendChild(div);
+    });
+}
+
+// Generate scramble
+const moves = ["R","L","U","D","F","B"];
+function generateScramble() {
+    let result=[], last="";
+    for(let i=0;i<25;i++){
+        let m;
+        do { m = moves[Math.floor(Math.random()*moves.length)]; } while(m===last);
+        last=m;
+        let s = ["","'","2"][Math.floor(Math.random()*3)];
+        result.push(m+s);
+    }
+    return result.join(" ");
+}
+
+// Scramble button
+scrambleBtn.onclick=e=>{
+    e.stopPropagation();
+    scrambleEl.textContent = generateScramble();
+};
+
+// Render saat load
+renderTimes();
+</script>
+
+</body>
+</html>
